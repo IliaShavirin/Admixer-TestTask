@@ -55,7 +55,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	port := os.Getenv("PORT")
+	port := os.Getenv("ASPNETCORE_PORT")
 	if port == "" {
 		port = "8080"
 	}
