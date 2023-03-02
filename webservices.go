@@ -50,7 +50,7 @@ func main() {
 		log.Fatal(err.Error())
 	}
 
-	// createTable(db)
+	createTable(db)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -60,19 +60,30 @@ func main() {
 }
 
 func createTable(db *sql.DB) {
-	_, err := db.Exec("CREATE TABLE Admixer (id DECIMAL, url VARCHAR(100))")
-	if err != nil {
-		fmt.Println("Error creating table:", err)
-		panic(err.Error())
+	if !tableExists(db, "Admixer") {
+		_, err := db.Exec("CREATE TABLE Admixer (id DECIMAL, url VARCHAR(100))")
+		if err != nil {
+			fmt.Println("Error creating table:", err)
+			panic(err.Error())
+		}
 	}
 
-	_, err = db.Exec(`INSERT INTO Admixer (id, url) VALUES
-        (1, 'http://inv-nets.admixer.net/test-dsp/dsp?responseType=1&profile=1'),
-        (2, 'http://inv-nets.admixer.net/test-dsp/dsp?responseType=1&profile=2'),
-        (3, 'http://inv-nets.admixer.net/test-dsp/dsp?responseType=1&profile=3'),
-        (4, 'http://inv-nets.admixer.net/test-dsp/dsp?responseType=1&profile=4')`)
-	if err != nil {
+	row := db.QueryRow("SELECT COUNT(*) FROM Admixer")
+	var count int
+	if err := row.Scan(&count); err != nil {
 		log.Fatal(err)
+	}
+
+	if count == 0 {
+		_, err := db.Exec(`INSERT INTO Admixer (id, url) VALUES
+            (1, 'http://inv-nets.admixer.net/test-dsp/dsp?responseType=1&profile=1'),
+            (2, 'http://inv-nets.admixer.net/test-dsp/dsp?responseType=1&profile=2'),
+            (3, 'http://inv-nets.admixer.net/test-dsp/dsp?responseType=1&profile=3'),
+            (4, 'http://inv-nets.admixer.net/test-dsp/dsp?responseType=1&profile=4')`)
+
+		if err != nil {
+			log.Fatal(err)
+		}
 	}
 
 	fmt.Println("Table created successfully")
@@ -112,33 +123,35 @@ func isValidIP(ip string) bool {
 	return true
 }
 
-func getRequest(w http.ResponseWriter, r *http.Request) {
-	requestID := r.URL.Query().Get("request_id")
+func tableExists(db *sql.DB, tableName string) bool {
 
-	fmt.Println("requestID:", requestID)
+	connString := fmt.Sprintf("SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME =  '%s'", tableName)
+	rows, err := db.Query(connString)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer rows.Close()
 
-	urlPackages := r.URL.Query()["url_package"]
-	ip := r.URL.Query().Get("ip")
+	var count int
+	if rows.Next() {
+		err := rows.Scan(&count)
+		if err != nil {
+			log.Fatal(err)
+		}
+	}
 
+	return count > 0
+}
+
+func handleRequest(w http.ResponseWriter, r *http.Request, urlPackages []int, ip string) {
 	if !isValidIP(ip) {
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
 
-	type serverResponse struct {
-		price float64
-		err   error
-	}
-
 	var maxPrice float64
 
-	for _, urlIDStr := range urlPackages {
-		urlID, err := strconv.Atoi(urlIDStr)
-		if err != nil {
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-
+	for _, urlID := range urlPackages {
 		url, err := getURL(int64(urlID))
 		if err != nil {
 			w.WriteHeader(http.StatusNoContent)
@@ -185,6 +198,29 @@ func getRequest(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(response)
 }
 
+func getRequest(w http.ResponseWriter, r *http.Request) {
+	requestID := r.URL.Query().Get("request_id")
+
+	fmt.Println("requestID:", requestID)
+
+	urlPackagesStr := r.URL.Query()["url_package"]
+
+	urlPackages := make([]int, len(urlPackagesStr))
+
+	for i, s := range urlPackagesStr {
+		n, err := strconv.Atoi(s)
+		if err != nil {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		urlPackages[i] = n
+	}
+
+	ip := r.URL.Query().Get("ip")
+
+	handleRequest(w, r, urlPackages, ip)
+}
+
 func postRequest(w http.ResponseWriter, r *http.Request) {
 	var request Request
 
@@ -202,66 +238,5 @@ func postRequest(w http.ResponseWriter, r *http.Request) {
 	urlPackages := request.UrlPackage
 	ip := request.IP
 
-	if !isValidIP(ip) {
-		w.WriteHeader(http.StatusNoContent)
-		return
-	}
-
-	type serverResponse struct {
-		price float64
-		err   error
-	}
-
-	var maxPrice float64
-
-	for _, urlID := range urlPackages {
-		if err != nil {
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-
-		url, err := getURL(int64(urlID))
-		if err != nil {
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-
-		resp, err := http.Get(url)
-		if err != nil {
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-		defer resp.Body.Close()
-
-		body, err := ioutil.ReadAll(resp.Body)
-		if err != nil {
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-
-		var jsonResponse map[string]interface{}
-		err = json.Unmarshal(body, &jsonResponse)
-		if err != nil {
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-
-		price, ok := jsonResponse["price"].(float64)
-
-		if !ok {
-			price = 0
-		}
-
-		if price > maxPrice {
-			maxPrice = price
-		}
-	}
-
-	// Create response
-	response := Response{
-		Price: maxPrice,
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	handleRequest(w, r, urlPackages, ip)
 }
