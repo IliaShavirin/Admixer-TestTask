@@ -9,6 +9,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"os"
 	"strconv"
 
 	_ "github.com/denisenkom/go-mssqldb"
@@ -55,8 +56,14 @@ func main() {
 		log.Fatal(err)
 	}
 
+	port := os.Getenv("HTTP_PLATFORM_PORT")
+
+	if port == "" {
+		port = "8080"
+	}
+
 	http.HandleFunc("/url", urlHandler)
-	http.ListenAndServe(":8080", nil)
+	http.ListenAndServe("127.0.0.1:"+port, nil)
 }
 
 func createTable(db *sql.DB) {
