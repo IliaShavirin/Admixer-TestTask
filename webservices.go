@@ -57,14 +57,11 @@ func main() {
 	}
 	port := os.Getenv("PORT")
 	if port == "" {
-		log.Fatal("$PORT must be set")
+		port = "8080"
 	}
 
 	http.HandleFunc("/url", urlHandler)
-	err := http.ListenAndServe(":"+port, nil)
-	if err != nil {
-		log.Fatal("ListenAndServe: ", err)
-	}
+	log.Fatal(http.ListenAndServe(":"+port, nil))
 }
 
 func createTable(db *sql.DB) {
