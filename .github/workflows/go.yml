@@ -22,6 +22,6 @@ jobs:
     - name: 'Deploy to Azure WebApp'
       uses: Azure/webapps-deploy@v2
       with:
-        app-name: Admixer
+        app-name: Admixer-TestTask
         publish-profile: ${{ secrets.azureWebAppPublishProfile }}
         package: build/
